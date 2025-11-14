@@ -21,6 +21,7 @@ root/
 ├── snake_game_multiplayer.py       # Core game engine
 ├── snake_game_multiplayer_gui.py   # PyQt5 GUI for watching battles
 ├── agent_middleware_large.py       # Agent wrapper with observation processing
+├── agent_middleware_structure.py   # Agent wrapper structure
 ├── snake_model_large.py            # Neural network architecture
 ├── train_main_agent.py             # Main agent training script
 ├── train_killer.py                 # Killer agent training script
@@ -46,7 +47,7 @@ root/
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/blackstonecan/rl-snake-game.git
 ```
 
 2. Install dependencies:
