@@ -25,7 +25,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class DefenderTrainer:
-    def __init__(self, grid_size=30, opponent_model_path='killer_agent.pth'):
+    def __init__(self, grid_size, opponent_model_path):
         self.grid_size = grid_size
         self.game = SnakeGameMultiplayer(grid_size)
         
@@ -33,14 +33,10 @@ class DefenderTrainer:
         self.defender_agent = AgentMiddlewareLarge()
         
         # Opponent agent (Frozen) - Defaults to Killer for best training
-        self.opponent_agent = None
-        if os.path.exists(opponent_model_path):
-            print(f"Loading opponent from {opponent_model_path}")
+        print(f"Loading opponent from {opponent_model_path}")
 
-            self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)    
-            self.opponent_agent.model.eval()  # Freeze opponent
-        else:
-            print(f"Warning: {opponent_model_path} not found. Opponent will play randomly.")
+        self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)    
+        self.opponent_agent.model.eval()  # Freeze opponent
         
         self.device = self.defender_agent.device
         self.optimizer = optim.Adam(self.defender_agent.model.parameters(), lr=0.0005) # Lower LR for stability

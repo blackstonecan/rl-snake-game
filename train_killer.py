@@ -33,14 +33,10 @@ class KillerTrainer:
         self.killer_agent = AgentMiddlewareLarge()
         
         # Opponent agent (5x5, frozen)
-        self.opponent_agent = None
-        if os.path.exists(opponent_model_path):
-            print(f"Loading opponent from {opponent_model_path}")
+        print(f"Loading opponent from {opponent_model_path}")
 
-            self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)
-            self.opponent_agent.model.eval()  # Freeze opponent
-        else:
-            print(f"Warning: {opponent_model_path} not found. Opponent will play randomly.")
+        self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)
+        self.opponent_agent.model.eval()  # Freeze opponent
         
         self.device = self.killer_agent.device
         self.optimizer = optim.Adam(self.killer_agent.model.parameters(), lr=0.001)

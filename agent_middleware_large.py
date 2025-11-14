@@ -33,11 +33,13 @@ class AgentMiddlewareLarge:
     
     def load_model(self, path):
         """Load trained model weights"""
+        path = "./models/" + path
         self.model.load_state_dict(torch.load(path, map_location=self.device))
         self.model.eval()
     
     def save_model(self, path):
         """Save model weights"""
+        path = "./models/" + path
         torch.save(self.model.state_dict(), path)
     
     def get_rotated_grid(self, snake, direction, grid_size, apples, opponent_snake):

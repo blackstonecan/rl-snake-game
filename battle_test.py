@@ -34,10 +34,6 @@ class BattleTest:
             print(f"{name}: Random Agent")
             return None, 'random'
         
-        if not os.path.exists(path):
-            print(f"Error: {path} not found")
-            sys.exit(1)
-        
         agent = AgentMiddlewareLarge(path)
         
         print(f"{name}: Loaded from {path}")
@@ -198,8 +194,6 @@ def main():
                        help='Number of games to play (default: 100)')
     parser.add_argument('-g', '--grid-size', type=int, default=30,
                        help='Grid size (default: 30)')
-    parser.add_argument('-o', '--output', type=str, default='battle_results.txt',
-                       help='Output file for results (default: battle_results.txt)')
     
     args = parser.parse_args()
     

@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
         
         # Scan current directory for .pth files
         import glob
-        pth_files = glob.glob("*.pth")
+        pth_files = glob.glob("./models/*.pth")
         
         if not pth_files:
             print("No .pth files found in current directory")
@@ -218,24 +218,10 @@ class MainWindow(QMainWindow):
         
         for pth_file in pth_files:
             # Try to determine if 5x5 or 7x7 based on filename patterns
+            pth_file = pth_file.replace("./models/", "")
             display_name = pth_file
             
             combo.addItem(display_name, pth_file)
-    
-    def detect_agent_type(self, pth_file):
-        """Try to detect if a model is 5x5 or 7x7 by loading it"""
-        try:
-            state_dict = torch.load(pth_file, map_location='cpu')
-            # Check input layer size
-            if 'fc1.weight' in state_dict:
-                input_size = state_dict['fc1.weight'].shape[1]
-                if input_size == 31:
-                    return '5x5'
-                elif input_size == 57:
-                    return '7x7'
-            return '7x7'  # Default to 7x7 if unsure
-        except:
-            return '7x7'  # Default to 7x7 on error
     
     def refresh_models(self):
         """Refresh the model list from directory"""
