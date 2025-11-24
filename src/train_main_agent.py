@@ -5,7 +5,7 @@ import numpy as np
 from collections import deque
 import random
 from snake.snake_game_multiplayer import SnakeGameMultiplayer, Direction
-from front.agents.agent_middleware_large import AgentMiddlewareLarge
+from agents.agent_middleware_large import AgentMiddlewareLarge
 import os
 
 class ReplayBuffer:
@@ -31,24 +31,16 @@ class OpponentPool:
         self.checkpoints = {}  # For self-play
         
         # Load killer agent (7x7, aggressive)
-        if os.path.exists(killer_path):
-            print(f"✓ Loaded killer agent from {killer_path}")
-            killer = AgentMiddlewareLarge(killer_path)
-            killer.model.eval()
-            self.opponents['killer'] = killer
-        else:
-            print(f"✗ Warning: {killer_path} not found")
-            self.opponents['killer'] = None
+        print(f"✓ Loaded killer agent from {killer_path}")
+        killer = AgentMiddlewareLarge(killer_path)
+        killer.model.eval()
+        self.opponents['killer'] = killer
         
         # Load peaceful agent (5x5, apple-focused)
-        if os.path.exists(peaceful_path):
-            print(f"✓ Loaded peaceful agent from {peaceful_path}")
-            peaceful = AgentMiddlewareLarge(peaceful_path)
-            peaceful.model.eval()
-            self.opponents['peaceful'] = peaceful
-        else:
-            print(f"✗ Warning: {peaceful_path} not found")
-            self.opponents['peaceful'] = None
+        print(f"✓ Loaded peaceful agent from {peaceful_path}")
+        peaceful = AgentMiddlewareLarge(peaceful_path)
+        peaceful.model.eval()
+        self.opponents['peaceful'] = peaceful
     
     def add_checkpoint(self, name, agent_copy):
         """Add a checkpoint for self-play"""
@@ -123,7 +115,7 @@ class OpponentPool:
             return self.checkpoints[checkpoint_name], f'self_{checkpoint_name}'
 
 class MainAgentTrainer:
-    def __init__(self, grid_size=30, killer_path='killer_agent.pth', peaceful_path='snake_agent.pth'):
+    def __init__(self, grid_size=30, killer_path='killer_agent.pth', peaceful_path='defender_agent.pth'):
         self.grid_size = grid_size
         self.game = SnakeGameMultiplayer(grid_size)
         
@@ -424,7 +416,7 @@ if __name__ == '__main__':
     trainer = MainAgentTrainer(
         grid_size=30,
         killer_path='killer_agent.pth',
-        peaceful_path='snake_agent.pth'
+        peaceful_path='defender_agent.pth'
     )
     
     # Train the main agent

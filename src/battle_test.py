@@ -9,7 +9,7 @@ import sys
 import numpy as np
 from tqdm import tqdm
 from snake.snake_game_multiplayer import SnakeGameMultiplayer
-from front.agents.agent_middleware_large import AgentMiddlewareLarge
+from agents.agent_middleware_large import AgentMiddlewareLarge
 
 class BattleTest:
     def __init__(self, model1_path, model2_path, grid_size=30):
@@ -33,10 +33,6 @@ class BattleTest:
         if path.lower() == 'random':
             print(f"{name}: Random Agent")
             return None, 'random'
-        
-        if not os.path.exists(path):
-            print(f"Error: {path} not found")
-            sys.exit(1)
         
         agent = AgentMiddlewareLarge(path)
         
@@ -198,8 +194,6 @@ def main():
                        help='Number of games to play (default: 100)')
     parser.add_argument('-g', '--grid-size', type=int, default=30,
                        help='Grid size (default: 30)')
-    parser.add_argument('-o', '--output', type=str, default='battle_results.txt',
-                       help='Output file for results (default: battle_results.txt)')
     
     args = parser.parse_args()
     
