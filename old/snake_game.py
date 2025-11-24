@@ -13,7 +13,7 @@ mini_models = ["snake_agent.pth"]
 
 try:
     from agent_middleware import AgentMiddleware
-    from agent_middleware_large import AgentMiddlewareLarge
+    from front.agents.agent_middleware_large import AgentMiddlewareLarge
     AGENT_AVAILABLE = True
 except ImportError:
     AGENT_AVAILABLE = False

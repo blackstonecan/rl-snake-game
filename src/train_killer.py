@@ -4,8 +4,8 @@ import torch.optim as optim
 import numpy as np
 from collections import deque
 import random
-from snake_game_multiplayer import SnakeGameMultiplayer, Direction
-from agent_middleware_large import AgentMiddlewareLarge
+from snake.snake_game_multiplayer import SnakeGameMultiplayer, Direction
+from front.agents.agent_middleware_large import AgentMiddlewareLarge
 import os
 
 class ReplayBuffer:

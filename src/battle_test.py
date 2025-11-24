@@ -8,8 +8,8 @@ import os
 import sys
 import numpy as np
 from tqdm import tqdm
-from snake_game_multiplayer import SnakeGameMultiplayer
-from agent_middleware_large import AgentMiddlewareLarge
+from snake.snake_game_multiplayer import SnakeGameMultiplayer
+from front.agents.agent_middleware_large import AgentMiddlewareLarge
 
 class BattleTest:
     def __init__(self, model1_path, model2_path, grid_size=30):
