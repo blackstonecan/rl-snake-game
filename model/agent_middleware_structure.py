@@ -1,6 +1,3 @@
-import torch
-import numpy as np
-from snake_model_large import SnakeNetLarge
 import sys
 import os
 from enum import Enum

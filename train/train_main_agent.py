@@ -4,8 +4,8 @@ import torch.optim as optim
 import numpy as np
 from collections import deque
 import random
-from snake_game_multiplayer import SnakeGameMultiplayer, Direction
-from agent_middleware_large import AgentMiddlewareLarge
+from game.snake_game_multiplayer import SnakeGameMultiplayer
+from model.agent_middleware_large import AgentMiddlewareLarge
 import os
 
 class ReplayBuffer:
@@ -26,7 +26,7 @@ class ReplayBuffer:
 
 class OpponentPool:
     """Manages different opponent types for curriculum learning"""
-    def __init__(self, killer_path='killer_agent.pth', peaceful_path='defender_agent.pth'):
+    def __init__(self, killer_path, peaceful_path):
         self.opponents = {}
         self.checkpoints = {}  # For self-play
         
@@ -49,30 +49,30 @@ class OpponentPool:
     def get_opponent_weights(self, episode):
         """
         Get opponent sampling weights based on curriculum
-        Phase 1 (0-600):   70% killer, 30% peaceful
-        Phase 2 (600-1000): 40% killer, 20% peaceful, 40% self
+        Phase 1 (0-600):   40% killer, 60% peaceful
+        Phase 2 (600-1000): 70% killer, 20% peaceful, 10% self
         Phase 3 (1000+):    10% killer, 10% peaceful, 80% self
         """
         if episode < 600:
-            # Phase 1: Learn defense
+            # Phase 1: Learn to play
             return {
-                'killer': 0.7,
-                'peaceful': 0.3,
+                'killer': 0.4,
+                'peaceful': 0.6,
                 'self': 0.0
             }
         elif episode < 1000:
-            # Phase 2: Transition
+            # Phase 2: Learn to compete
             return {
-                'killer': 0.4,
+                'killer': 0.7,
                 'peaceful': 0.2,
-                'self': 0.4
+                'self': 0.1
             }
         else:
             # Phase 3: Self-play dominance
             return {
                 'killer': 0.1,
                 'peaceful': 0.1,
-                'self': 0.8
+                'self': 0.7
             }
     
     def sample_opponent(self, episode):
@@ -115,9 +115,9 @@ class OpponentPool:
             return self.checkpoints[checkpoint_name], f'self_{checkpoint_name}'
 
 class MainAgentTrainer:
-    def __init__(self, grid_size=30, killer_path='killer_agent.pth', peaceful_path='defender_agent.pth'):
-        self.grid_size = grid_size
-        self.game = SnakeGameMultiplayer(grid_size)
+    def __init__(self, killer_path, peaceful_path):
+        self.grid_size = 30
+        self.game = SnakeGameMultiplayer(self.grid_size)
         
         # Main agent (7x7, learning)
         self.main_agent = AgentMiddlewareLarge()
@@ -357,7 +357,7 @@ class MainAgentTrainer:
             oldest = min(self.opponent_pool.checkpoints.keys())
             del self.opponent_pool.checkpoints[oldest]
     
-    def train(self, num_episodes=2000, save_path='main_agent.pth', save_interval=100, checkpoint_interval=200):
+    def train(self, num_episodes, save_path, save_best_path):
         """Train the main agent"""
         print(f"Training Main Competitive Agent on device: {self.device}")
         print(f"Starting training for {num_episodes} episodes...\n")
@@ -391,16 +391,16 @@ class MainAgentTrainer:
                 recent_win_rate = np.mean(self.episode_wins[-100:])
                 if recent_win_rate > best_win_rate:
                     best_win_rate = recent_win_rate
-                    self.main_agent.save_model(f"best_{save_path}")
+                    self.main_agent.save_model(save_best_path)
                     print(f"New best win rate: {best_win_rate:.2%}")
             
             # Save checkpoint for self-play
-            if episode % checkpoint_interval == 0:
+            if episode % 100 == 0:
                 self.save_checkpoint(episode)
                 print(f"Checkpoint saved for self-play (episode {episode})")
             
             # Save model
-            if episode % save_interval == 0:
+            if episode % 200 == 0:
                 self.main_agent.save_model(save_path)
                 print(f"Model saved to {save_path}")
         
@@ -412,19 +412,25 @@ class MainAgentTrainer:
         return self.episode_rewards, self.episode_scores, self.episode_wins
 
 if __name__ == '__main__':
+
+    save_path = './agents/main_agent.pth'
+    save_best_path = './agents/best_main_agent.pth'
+    
+    killer_path = './agents/killer_agent_fav.pth'
+    peaceful_path = './agents/defender_agent.pth'
+
+
     # Create trainer
     trainer = MainAgentTrainer(
-        grid_size=30,
-        killer_path='killer_agent.pth',
-        peaceful_path='defender_agent.pth'
+        killer_path=killer_path,
+        peaceful_path=peaceful_path
     )
     
     # Train the main agent
     rewards, scores, wins = trainer.train(
         num_episodes=2000,
-        save_path='main_agent.pth',
-        save_interval=100,
-        checkpoint_interval=200
+        save_path=save_path,
+        save_best_path=save_best_path
     )
     
     print("\nTraining statistics:")

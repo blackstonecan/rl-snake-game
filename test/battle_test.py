@@ -8,8 +8,8 @@ import os
 import sys
 import numpy as np
 from tqdm import tqdm
-from snake_game_multiplayer import SnakeGameMultiplayer
-from agent_middleware_large import AgentMiddlewareLarge
+from game.snake_game_multiplayer import SnakeGameMultiplayer
+from model.agent_middleware_large import AgentMiddlewareLarge
 
 class BattleTest:
     def __init__(self, model1_path, model2_path, grid_size=30):
@@ -32,10 +32,19 @@ class BattleTest:
         """Load an agent model"""
         if path.lower() == 'random':
             print(f"{name}: Random Agent")
-            return None, 'random'
-        
+            return None
+
+        # If they passed a bare name, try to resolve it in ./agents with .pth
+        if not os.path.exists(path):
+            candidate = os.path.join("agents", path)
+            if os.path.exists(candidate + ".pth"):
+                path = candidate + ".pth"
+            elif os.path.exists(candidate):
+                path = candidate
+            elif os.path.exists(path + ".pth"):
+                path = path + ".pth"
+
         agent = AgentMiddlewareLarge(path)
-        
         print(f"{name}: Loaded from {path}")
         return agent
     

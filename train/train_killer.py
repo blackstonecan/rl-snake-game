@@ -4,8 +4,8 @@ import torch.optim as optim
 import numpy as np
 from collections import deque
 import random
-from snake_game_multiplayer import SnakeGameMultiplayer, Direction
-from agent_middleware_large import AgentMiddlewareLarge
+from game.snake_game_multiplayer import SnakeGameMultiplayer, Direction
+from model.agent_middleware_large import AgentMiddlewareLarge
 import os
 
 class ReplayBuffer:
@@ -24,22 +24,22 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
-class DefenderTrainer:
-    def __init__(self, grid_size, opponent_model_path):
-        self.grid_size = grid_size
-        self.game = SnakeGameMultiplayer(grid_size)
+class KillerTrainer:
+    def __init__(self, opponent_model_path):
+        self.grid_size = 30
+        self.game = SnakeGameMultiplayer(self.grid_size)
         
-        # Defender agent (7x7, learning) - Using Large for better field of view
-        self.defender_agent = AgentMiddlewareLarge()
+        # Killer agent (7x7, learning)
+        self.killer_agent = AgentMiddlewareLarge()
         
-        # Opponent agent (Frozen) - Defaults to Killer for best training
+        # Opponent agent (5x5, frozen)
         print(f"Loading opponent from {opponent_model_path}")
 
-        self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)    
+        self.opponent_agent = AgentMiddlewareLarge(opponent_model_path)
         self.opponent_agent.model.eval()  # Freeze opponent
         
-        self.device = self.defender_agent.device
-        self.optimizer = optim.Adam(self.defender_agent.model.parameters(), lr=0.0005) # Lower LR for stability
+        self.device = self.killer_agent.device
+        self.optimizer = optim.Adam(self.killer_agent.model.parameters(), lr=0.001)
         self.criterion = nn.MSELoss()
         
         self.replay_buffer = ReplayBuffer(capacity=10000)
@@ -55,35 +55,35 @@ class DefenderTrainer:
         # Statistics
         self.episode_rewards = []
         self.episode_scores = []
-        self.episode_steps_alive = []
+        self.episode_kills = []
         self.episode_wins = []
     
     def calculate_reward(self, prev_state, current_state, opponent_prev_state, opponent_current_state):
         """
-        Calculate reward for DEFENDER agent
-        Defensive rewards: Prioritize survival, eating apples, and keeping distance.
+        Calculate reward for killer agent
+        Aggressive rewards: prioritize killing opponent
         """
         reward = 0
         
-        # 1. CRITICAL: Survival Penalty/Reward
+        # Check if killer died
         if current_state['game_over']:
-            # Massive penalty for dying
-            return -500
+            if opponent_current_state['game_over']:
+                return -200
+            else:
+                return -300
         
-        # Small reward just for staying alive every step
-        reward += 1
-        
-        # 2. WINNING: If opponent died and we are alive
+        # MAIN GOAL: Kill opponent
         if opponent_current_state['game_over'] and not opponent_prev_state['game_over']:
-            reward += 50  # We outlived them! Good job.
+            reward += 100  # Killed opponent!
         
-        # 3. FOOD: Reward for eating apple (necessary to not starve/grow)
+        # Reward for eating apple (need to survive)
         if current_state['score'] > prev_state['score']:
-            reward += 30
+            reward += 20
         
-        # 4. SPACING: Logic to keep distance from opponent
+        # Reward for moving closer to opponent
         prev_head = prev_state['snake'][0]
         curr_head = current_state['snake'][0]
+        opp_prev_head = opponent_prev_state['snake'][0]
         opp_curr_head = opponent_current_state['snake'][0]
         
         def distance(pos1, pos2):
@@ -94,27 +94,20 @@ class DefenderTrainer:
             dy = min(dy, self.grid_size - dy)
             return dx + dy
         
-        prev_dist = distance(prev_head, opp_curr_head)
+        prev_dist = distance(prev_head, opp_prev_head)
         curr_dist = distance(curr_head, opp_curr_head)
         
-        # DANGER ZONE LOGIC
-        danger_radius = 8
+        if curr_dist < prev_dist:
+            reward += 2  # Moving toward opponent
+        elif curr_dist > prev_dist:
+            reward -= 1  # Moving away from opponent
         
-        if curr_dist < danger_radius:
-            # We are in danger!
-            if curr_dist > prev_dist:
-                # Moving AWAY from opponent -> GOOD
-                reward += 5 
-            elif curr_dist < prev_dist:
-                # Moving TOWARDS opponent -> BAD
-                reward -= 10
-        else:
-            # We are safe. 
-            # Slight penalty for being too far? No, just exist.
-            pass
-
-        # 5. Penalty for trapping self (simple heuristic)
-        # If our body length is high, punish creating loops? (Optional, skipped for now)
+        # Penalty if opponent is getting longer
+        if opponent_current_state['score'] > opponent_prev_state['score']:
+            reward -= 1
+        
+        # Small step penalty
+        reward -= 0.1
         
         return reward
     
@@ -134,11 +127,11 @@ class DefenderTrainer:
         dones = torch.FloatTensor(dones).to(self.device)
         
         # Current Q values
-        current_q_values = self.defender_agent.model(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+        current_q_values = self.killer_agent.model(states).gather(1, actions.unsqueeze(1)).squeeze(1)
         
         # Next Q values
         with torch.no_grad():
-            next_q_values = self.defender_agent.model(next_states).max(1)[0]
+            next_q_values = self.killer_agent.model(next_states).max(1)[0]
             target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
         
         # Compute loss
@@ -159,9 +152,6 @@ class DefenderTrainer:
             'LEFT':  {'LEFT': 0,  'DOWN': 1,  'UP': 2},
             'RIGHT': {'RIGHT': 0, 'UP': 1,    'DOWN': 2}
         }
-        # Handle cases where next dir is opposite (shouldn't happen with valid logic but safe to default)
-        if chosen_dir.name not in action_map[current_dir.name]:
-            return 0 # Maintain course
         return action_map[current_dir.name][chosen_dir.name]
     
     def train_episode(self):
@@ -169,31 +159,34 @@ class DefenderTrainer:
         self.game.reset()
         episode_reward = 0
         step_count = 0
-        max_steps = 2000 # Defenders need to last longer
+        max_steps = 1000
+        killed_opponent = False
         
         while not self.game.is_game_over() and step_count < max_steps:
             # Get current states
-            def_prev_state = self.game.get_state(1)
-            opp_prev_state = self.game.get_state(2)
+            killer_prev_state = self.game.get_state(1)
+            opponent_prev_state = self.game.get_state(2)
             
-            # Only proceed if defender is alive
-            if not def_prev_state['game_over']:
-                def_prev_obs = self.defender_agent.get_observation(def_prev_state, opp_prev_state)
+            # Only proceed if killer is alive
+            if not killer_prev_state['game_over']:
+                killer_prev_obs = self.killer_agent.get_observation(killer_prev_state, opponent_prev_state)
                 
-                # Defender action
-                def_action_dir = self.defender_agent.get_action(
-                    def_prev_state, 
-                    opp_prev_state, 
+                # Killer action
+                killer_action_dir = self.killer_agent.get_action(
+                    killer_prev_state, 
+                    opponent_prev_state, 
                     epsilon=self.epsilon
                 )
-                self.game.set_direction(1, def_action_dir)
+                self.game.set_direction(1, killer_action_dir)
             
             # Opponent action (if alive and agent exists)
-            if not opp_prev_state['game_over']:
+            if not opponent_prev_state['game_over']:
                 if self.opponent_agent:
-                    # Opponent plays optimally (no epsilon)
-                    opp_action_dir = self.opponent_agent.get_action(opp_prev_state, def_prev_state, epsilon=0.0)
-                    self.game.set_direction(2, opp_action_dir)
+                    opponent_action_dir = self.opponent_agent.get_action(
+                        opponent_prev_state, 
+                        epsilon=0.0  # No exploration for frozen opponent
+                    )
+                    self.game.set_direction(2, opponent_action_dir)
                 else:
                     # Random action if no opponent model
                     random_dir = random.choice([Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT])
@@ -203,35 +196,39 @@ class DefenderTrainer:
             self.game.step()
             
             # Get new states
-            def_curr_state = self.game.get_state(1)
-            opp_curr_state = self.game.get_state(2)
+            killer_curr_state = self.game.get_state(1)
+            opponent_curr_state = self.game.get_state(2)
             
-            # Only store experience if defender was alive before this step
-            if not def_prev_state['game_over']:
-                def_curr_obs = self.defender_agent.get_observation(def_curr_state, opp_curr_state)
+            # Only store experience if killer was alive before this step
+            if not killer_prev_state['game_over']:
+                killer_curr_obs = self.killer_agent.get_observation(killer_curr_state, opponent_curr_state)
                 
                 # Calculate reward
                 reward = self.calculate_reward(
-                    def_prev_state, 
-                    def_curr_state,
-                    opp_prev_state,
-                    opp_curr_state
+                    killer_prev_state, 
+                    killer_curr_state,
+                    opponent_prev_state,
+                    opponent_curr_state
                 )
                 episode_reward += reward
                 
+                # Check if killed opponent
+                if opponent_curr_state['game_over'] and not opponent_prev_state['game_over']:
+                    killed_opponent = True
+                
                 # Convert action to index
                 action_idx = self.direction_to_action_idx(
-                    def_prev_state['direction'], 
-                    def_action_dir
+                    killer_prev_state['direction'], 
+                    killer_action_dir
                 )
                 
                 # Store in replay buffer
                 self.replay_buffer.push(
-                    def_prev_obs, 
+                    killer_prev_obs, 
                     action_idx, 
                     reward, 
-                    def_curr_obs,
-                    1.0 if def_curr_state['game_over'] else 0.0
+                    killer_curr_obs,
+                    1.0 if killer_curr_state['game_over'] else 0.0
                 )
                 
                 # Train
@@ -249,66 +246,71 @@ class DefenderTrainer:
         # Store statistics
         self.episode_rewards.append(episode_reward)
         self.episode_scores.append(self.game.score1)
-        self.episode_steps_alive.append(step_count)
+        self.episode_kills.append(1 if killed_opponent else 0)
         self.episode_wins.append(1 if won else 0)
         
-        return episode_reward, self.game.score1, step_count, won
+        return episode_reward, self.game.score1, killed_opponent, won
     
-    def train(self, num_episodes=1000, save_path='defender_agent.pth', save_interval=100):
-        """Train the defender agent"""
-        print(f"Training Defender Agent on device: {self.device}")
-        print(f"Opponent: {self.opponent_agent.__class__.__name__ if self.opponent_agent else 'Random'}")
+    def train(self, num_episodes, save_path, best_save_path):
+        """Train the killer agent"""
+        print(f"Training Killer Agent on device: {self.device}")
         print(f"Starting training for {num_episodes} episodes...\n")
         
-        best_steps = 0
+        best_kills = 0
         
         for episode in range(1, num_episodes + 1):
-            reward, score, steps, won = self.train_episode()
+            reward, score, killed, won = self.train_episode()
             
             # Print progress
             if episode % 10 == 0:
                 avg_reward = np.mean(self.episode_rewards[-10:])
                 avg_score = np.mean(self.episode_scores[-10:])
-                avg_steps = np.mean(self.episode_steps_alive[-10:])
+                avg_kills = np.mean(self.episode_kills[-10:])
                 avg_wins = np.mean(self.episode_wins[-10:])
                 
                 print(f"Episode {episode}/{num_episodes} | "
-                      f"Eps: {self.epsilon:.2f} | "
-                      f"Reward: {avg_reward:.1f} | "
-                      f"Score: {avg_score:.1f} | "
-                      f"Steps: {avg_steps:.1f} | "
-                      f"Win%: {avg_wins:.2f}")
+                      f"Epsilon: {self.epsilon:.3f} | "
+                      f"Avg Reward: {avg_reward:.2f} | "
+                      f"Avg Score: {avg_score:.2f} | "
+                      f"Kill Rate: {avg_kills:.2f} | "
+                      f"Win Rate: {avg_wins:.2f}")
             
-            # Save best model (based on survival/steps)
-            recent_steps = np.mean(self.episode_steps_alive[-50:]) if len(self.episode_steps_alive) >= 50 else np.mean(self.episode_steps_alive)
-            if recent_steps > best_steps and episode > 50:
-                best_steps = recent_steps
-                self.defender_agent.save_model(f"best_{save_path}")
+            # Save best model (based on kills)
+            recent_kills = sum(self.episode_kills[-100:]) if len(self.episode_kills) >= 100 else sum(self.episode_kills)
+            if recent_kills > best_kills:
+                best_kills = recent_kills
+                self.killer_agent.save_model(best_save_path)
             
             # Save checkpoint
-            if episode % save_interval == 0:
-                self.defender_agent.save_model(save_path)
+            if episode % 100 == 0:
+                self.killer_agent.save_model(save_path)
                 print(f"Model saved to {save_path}")
         
         # Final save
-        self.defender_agent.save_model(save_path)
+        self.killer_agent.save_model(save_path)
         print(f"\nTraining complete! Final model saved to {save_path}")
-        print(f"Best avg steps (last 50 episodes): {best_steps:.1f}")
+        print(f"Best kill count (last 100 episodes): {best_kills}")
         
-        return self.episode_rewards, self.episode_scores, self.episode_steps_alive, self.episode_wins
+        return self.episode_rewards, self.episode_scores, self.episode_kills, self.episode_wins
 
 if __name__ == '__main__':
-    # Create trainer - Trains against 'killer_agent.pth' if available
-    # Assuming killer agent is the 7x7 one you just trained
-    trainer = DefenderTrainer(grid_size=30, opponent_model_path='killer_agent.pth')
+    save_path = './agents/killer_agent.pth'
+    save_best_path = './agents/best_killer_agent.pth'
     
-    # Train the defender agent
-    rewards, scores, steps, wins = trainer.train(
+    opponent_model_path = './agents/defender_agent.pth'
+
+    # Create trainer
+    trainer = KillerTrainer(opponent_model_path)
+    
+    # Train the killer agent
+    rewards, scores, kills, wins = trainer.train(
         num_episodes=1000, 
-        save_path='defender_agent.pth'
+        save_path=save_path,
+        best_save_path=save_best_path
     )
     
     print("\nTraining statistics:")
-    print(f"Final average reward (last 100): {np.mean(rewards[-100:]):.2f}")
-    print(f"Final average steps alive (last 100): {np.mean(steps[-100:]):.2f}")
-    print(f"Final win rate (last 100): {np.mean(wins[-100:]):.2f}")
+    print(f"Final average reward (last 100 episodes): {np.mean(rewards[-100:]):.2f}")
+    print(f"Final average score (last 100 episodes): {np.mean(scores[-100:]):.2f}")
+    print(f"Final kill rate (last 100 episodes): {np.mean(kills[-100:]):.2f}")
+    print(f"Final win rate (last 100 episodes): {np.mean(wins[-100:]):.2f}")

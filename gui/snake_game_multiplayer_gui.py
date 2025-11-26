@@ -1,11 +1,14 @@
+import os
 import sys
-import torch
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
                              QVBoxLayout, QHBoxLayout, QComboBox, QLabel)
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QPainter, QColor, QFont
-from snake_game_multiplayer import SnakeGameMultiplayer
-from agent_middleware_large import AgentMiddlewareLarge
+from game.snake_game_multiplayer import SnakeGameMultiplayer
+from model.agent_middleware_large import AgentMiddlewareLarge
+
+agents_path = os.path.dirname(os.path.abspath(__file__))
+agents_path = os.path.abspath(os.path.join(agents_path, '..', 'agents'))
 
 class GameWidget(QWidget):
     def __init__(self, game):
@@ -207,8 +210,8 @@ class MainWindow(QMainWindow):
         
         # Scan current directory for .pth files
         import glob
-        pth_files = glob.glob("./models/*.pth")
-        
+        pth_files = glob.glob(agents_path + "/*.pth")
+
         if not pth_files:
             print("No .pth files found in current directory")
             return
@@ -217,9 +220,8 @@ class MainWindow(QMainWindow):
         pth_files.sort()
         
         for pth_file in pth_files:
-            # Try to determine if 5x5 or 7x7 based on filename patterns
-            pth_file = pth_file.replace("./models/", "")
-            display_name = pth_file
+            # Just get file names
+            display_name = os.path.basename(pth_file)
             
             combo.addItem(display_name, pth_file)
     
